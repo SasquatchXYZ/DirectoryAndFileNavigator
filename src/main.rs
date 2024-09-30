@@ -1,19 +1,21 @@
 use std::{
     env::current_dir,
-    fs::read_dir,
+    fs::{read_dir, read_to_string},
     path::PathBuf,
 };
 use eframe::egui;
-use egui::{Color32, RichText};
+use egui::{Color32, RichText, TextEdit};
 
 struct DirectoryApp {
-    current_directory: PathBuf,
+    file_content: String,
+    current_dir: PathBuf,
 }
 
 impl DirectoryApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self {
-            current_directory: current_dir().unwrap(),
+            file_content: String::new(),
+            current_dir: current_dir().unwrap(),
         }
     }
 }
@@ -22,27 +24,47 @@ impl eframe::App for DirectoryApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.button(" .. ").clicked() {
-                self.current_directory.pop();
+                self.current_dir.pop();
             }
-            let read_dir = read_dir(&self.current_directory).unwrap();
-            for entry in read_dir.flatten() {
-                let metadata = entry.metadata().unwrap();
-                let name = entry.file_name().into_string().unwrap();
-                if metadata.is_dir() {
-                    if ui
-                        .button(RichText::new(&name).color(Color32::GRAY))
-                        .clicked() {
-                        self.current_directory.push(&name);
+            if let Ok(read_dir) = read_dir(&self.current_dir) {
+                for entry in read_dir.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_dir() {
+                            if let Ok(dir_name) = entry.file_name().into_string() {
+                                if ui
+                                    .button(RichText::new(&dir_name).color(Color32::GRAY))
+                                    .clicked() {
+                                    self.current_dir.push(&dir_name);
+                                }
+                            }
+                        } else if metadata.is_file() {
+                            if let Ok(file_name) = entry.file_name().into_string() {
+                                if ui
+                                    .button(RichText::new(&file_name).color(Color32::GOLD))
+                                    .clicked() {
+                                    if let Some(current_dir) = self.current_dir.to_str() {
+                                        let file_loc: PathBuf = [current_dir, &file_name].iter().collect();
+                                        let content = read_to_string(file_loc).unwrap_or_else(|e| e.to_string());
+                                        self.file_content = content;
+                                    }
+                                }
+                            }
+                        } else {
+                            ui.label(format!("{:?}", metadata.file_type()));
+                        }
                     }
-                } else if metadata.is_file() {
-                    if ui
-                        .button(RichText::new(&name).color(Color32::GOLD))
-                        .clicked() {}
-                } else {
-                    ui.label(name);
                 }
             }
         });
+
+        let width = ctx.screen_rect().max.x / 2.0;
+        if !self.file_content.is_empty() {
+            egui::SidePanel::right("Text viewer")
+                .min_width(width)
+                .show(ctx, |ui| {
+                    ui.add(TextEdit::multiline(&mut self.file_content).desired_width(width));
+                });
+        }
     }
 }
 
